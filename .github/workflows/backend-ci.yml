@@ -29,3 +29,6 @@ jobs:
       - name: Run tests
         run: npm test
         continue-on-error: true
+  
+  deploy:
+    needs: build-and-test
