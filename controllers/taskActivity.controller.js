@@ -10,7 +10,7 @@ export const getTaskActivity = async (req, res, next) => {
       .populate("project", "name")
       .populate("user", "name email")
       .populate("meta.assignedTo", "name email");
-
+    console.log(taskActivities);
     const resData = taskActivities.map((t) => ({
       id: t._id,
       type: t.type,
