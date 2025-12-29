@@ -155,6 +155,7 @@ export const updateTaskStatus = async (req, res, next) => {
   try {
     const { status } = req.body;
     const task = req.task;
+    const oldStatus = task.status;
 
     task.status = status;
     await task.save();
@@ -165,7 +166,7 @@ export const updateTaskStatus = async (req, res, next) => {
       user: req.user._id,
       type: TASK_ACTIVITY.TASK_STATUS_CHANGED,
       meta: {
-        from: task.status,
+        from: oldStatus,
         to: status,
       },
     });
