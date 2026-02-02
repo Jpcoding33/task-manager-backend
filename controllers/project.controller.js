@@ -48,13 +48,29 @@ export const updateProject = (rq, res, next) => {};
 
 export const getMyProjects = async (req, res, next) => {
   try {
-    const projects = await Project.find({
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const query = {
       "members.user": req.user._id,
       isArchived: false,
-    }).select("name description owner members createdAt");
+    };
+
+    const [projects, total] = await Promise.all([
+      Project.find(query)
+        .select("name description owner members createdAt")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Project.countDocuments(query),
+    ]);
 
     const resBody = projects.map((project) => {
-      const member = project.members.find((m) => m.user.equals(req.user._id));
+      const member = project.members.find((m) =>
+        m.user.equals ? m.user.equals(req.user._id) : m.user === req.user._id
+      );
 
       return {
         id: project._id,
@@ -65,7 +81,16 @@ export const getMyProjects = async (req, res, next) => {
         createdAt: project.createdAt,
       };
     });
-    return sendSuccess(res, resBody, STATUS.OK);
+
+    return sendSuccess(res, {
+      projects: resBody,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    }, STATUS.OK);
   } catch (err) {
     next(err);
   }
@@ -118,19 +143,25 @@ export const addProjectMembers = async (req, res, next) => {
   try {
     const membersToBeAdded = req.body.members;
     const project = req.project;
-    console.log(membersToBeAdded);
+    
+    const userIds = membersToBeAdded.map(m => m.userId);
+    const users = await User.find({ _id: { $in: userIds } }).select("_id name").lean();
+    const userMap = new Map(users.map(u => [u._id.toString(), u]));
+
     const added = [];
     const skipped = [];
+    const notifications = [];
+
     for (const member of membersToBeAdded) {
       const { userId, role } = member;
+      const user = userMap.get(userId.toString());
 
-      const user = await User.findById(userId).select("-password");
       if (!user) {
         skipped.push({ userId, reason: ERROR_MESSAGES.USER_NOT_FOUND });
         continue;
       }
 
-      if (project.members.some((m) => m.user._id.equals(userId))) {
+      if (project.members.some((m) => m.user._id ? m.user._id.equals(userId) : m.user.equals(userId))) {
         skipped.push({ userId, reason: ERROR_MESSAGES.ALREADY_MEMBER });
         continue;
       }
@@ -142,18 +173,20 @@ export const addProjectMembers = async (req, res, next) => {
 
       project.members.push({ user: userId, role });
       added.push({ userId, role: role || "member" });
+      
+      notifications.push({
+        user: userId,
+        project: project._id,
+        message: NOTIFICATION_MESSAGES.PROJECT_MEMBER_ADDED(project.name),
+        type: NOTIFICATION_TYPE.PROJECT_MEMBER_ADDED,
+      });
     }
 
     await project.save();
 
-    for (const member of membersToBeAdded) {
-      await createNotification({
-        user: member.userId,
-        project: project._id,
-
-        message: NOTIFICATION_MESSAGES.PROJECT_MEMBER_ADDED(project.name),
-        type: NOTIFICATION_TYPE.PROJECT_MEMBER_ADDED,
-      });
+    // Batch create notifications
+    if (notifications.length > 0) {
+      await Promise.all(notifications.map(n => createNotification(n)));
     }
 
     return sendSuccess(
@@ -163,6 +196,6 @@ export const addProjectMembers = async (req, res, next) => {
       SUCCESS_MESSAGES.MEMBERS_ADDED
     );
   } catch (err) {
-    next();
+    next(err);
   }
 };

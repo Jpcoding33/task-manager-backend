@@ -7,6 +7,7 @@ const UserSchema = new mongoose.Schema(
     name: {
       type: String,
       required: true,
+      index: true,
     },
     email: {
       type: String,
@@ -29,6 +30,7 @@ const UserSchema = new mongoose.Schema(
     isDeleted: {
       type: Boolean,
       default: false,
+      index: true,
     },
     resetPasswordToken: String,
     resetPasswordExpires: Date,

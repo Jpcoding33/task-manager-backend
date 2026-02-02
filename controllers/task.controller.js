@@ -53,14 +53,25 @@ export const createTask = async (req, res, next) => {
 export const getAllTaskByProject = async (req, res, next) => {
   try {
     const project = req.project;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
 
-    const tasks = await Task.find({
+    const query = {
       project: project._id,
       isArchived: false,
-    })
-      .select("title status priority assignedTo dueDate createdAt")
-      .populate("assignedTo", "name email")
-      .sort({ createdAt: -1 });
+    };
+
+    const [tasks, total] = await Promise.all([
+      Task.find(query)
+        .select("title status priority assignedTo dueDate createdAt")
+        .populate("assignedTo", "name email")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Task.countDocuments(query),
+    ]);
 
     const resData = tasks.map((task) => ({
       id: task._id,
@@ -74,7 +85,16 @@ export const getAllTaskByProject = async (req, res, next) => {
       dueDate: task.dueDate,
       createdAt: task.createdAt,
     }));
-    return sendSuccess(res, resData);
+
+    return sendSuccess(res, {
+      tasks: resData,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
   } catch (err) {
     next(err);
   }

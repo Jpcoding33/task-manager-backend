@@ -6,6 +6,7 @@ const ProjectMemberSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
+      index: true,
     },
     role: {
       type: String,
@@ -30,15 +31,19 @@ const ProjectSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
+      index: true,
     },
     members: [ProjectMemberSchema],
     isArchived: {
       type: Boolean,
       default: false,
+      index: true,
     },
   },
   { timestamps: true }
 );
+
+ProjectSchema.index({ "members.user": 1, isArchived: 1 });
 
 const Project = mongoose.model("Project", ProjectSchema);
 
