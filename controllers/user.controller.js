@@ -55,3 +55,23 @@ export const updatePassword = async (req, res, next) => {
     next(err);
   }
 };
+
+export const getAllUsers = async (req, res, next) => {
+  try {
+    const users = await User.find({
+      isDeleted: false,
+      role: { $in: ["member", "manager"] }
+    }).select("_id name email").lean();
+    
+    // Transform _id to id
+    const resData = users.map(user => ({
+      id: user._id,
+      name: user.name,
+      email: user.email
+    }));
+
+    return sendSuccess(res, resData, STATUS.OK);
+  } catch (err) {
+    next(err);
+  }
+};

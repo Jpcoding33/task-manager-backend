@@ -10,6 +10,7 @@ import {
   createTask,
   deleteTask,
   getAllTaskByProject,
+  getMyTasks,
   getTaskById,
   updateTask,
   updateTaskStatus,
@@ -18,6 +19,7 @@ import { projectRole } from "../middleware/projectRole.js";
 import { taskAccess } from "../middleware/taskAccess.js";
 import taskCommentRouter from "./taskComment.routes.js";
 import taskActivityRouter from "./taskActivity.routes.js";
+import { protect } from "../middleware/auth.js";
 
 const taskRouter = express.Router({ mergeParams: true });
 
@@ -26,17 +28,18 @@ taskRouter.post(
   projectRole("owner", "admin"),
   upsertTaskValidation,
   validate,
-  createTask
+  createTask,
 );
+taskRouter.get("/my-tasks", protect, getMyTasks);
 taskRouter.get("/", getAllTaskByProject);
 taskRouter.get("/:taskId", taskAccess, getTaskById);
-taskRouter.patch(
+taskRouter.put(
   "/:taskId",
   projectRole("owner", "admin"),
   taskAccess,
   upsertTaskValidation,
   validate,
-  updateTask
+  updateTask,
 );
 taskRouter.patch(
   "/:taskId/status",
@@ -44,7 +47,7 @@ taskRouter.patch(
   taskAccess,
   updateTaskStatusValidation,
   validate,
-  updateTaskStatus
+  updateTaskStatus,
 );
 taskRouter.patch(
   "/:taskId/assign",
@@ -52,25 +55,25 @@ taskRouter.patch(
   taskAccess,
   assignTaskValidation,
   validate,
-  assignTask
+  assignTask,
 );
 taskRouter.delete(
   "/:taskId",
   projectRole("owner", "admin"),
   taskAccess,
-  deleteTask
+  deleteTask,
 );
 taskRouter.use(
   "/:taskId/comments",
   projectRole("owner", "admin", "member"),
   taskAccess,
-  taskCommentRouter
+  taskCommentRouter,
 );
 taskRouter.use(
   "/:taskId/task-activity",
   projectRole("owner", "admin", "member"),
   taskAccess,
-  taskActivityRouter
+  taskActivityRouter,
 );
 
 export default taskRouter;

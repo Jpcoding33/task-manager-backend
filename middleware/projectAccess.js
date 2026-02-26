@@ -7,6 +7,10 @@ export const projectAccess = async (req, res, next) => {
   try {
     const projectId = req.params.id || req.params.projectId;
 
+    // if (!projectId || !/^[0-9a-fA-F]{24}$/.test(projectId)) {
+    //   return sendError(res, STATUS.NOT_FOUND, ERROR_MESSAGES.PROJECT_NOT_FOUND);
+    // }
+
     const project = await Project.findOne({ _id: projectId, isArchived: false })
       .populate("owner", "name email")
       .populate("members.user", "name email");
@@ -19,11 +23,12 @@ export const projectAccess = async (req, res, next) => {
       return sendError(
         res,
         STATUS.FORBIDDEN,
-        ERROR_MESSAGES.NOT_PROJECT_MEMBER
+        ERROR_MESSAGES.NOT_PROJECT_MEMBER,
       );
 
     req.project = project;
     req.myRole = member.role;
+
     next();
   } catch (err) {
     next(err);

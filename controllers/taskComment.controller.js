@@ -24,6 +24,7 @@ export const getTaskComments = async (req, res, next) => {
       id: c._id,
       content: c.content,
       author: {
+        id: c.author._id,
         name: c.author.name,
         email: c.author.email,
       },
@@ -77,7 +78,7 @@ export const addTaskComment = async (req, res, next) => {
       res,
       resData,
       STATUS.OK,
-      SUCCESS_MESSAGES.TASK_COMMENT_ADDED
+      SUCCESS_MESSAGES.TASK_COMMENT_ADDED,
     );
   } catch (err) {
     next(err);
@@ -97,7 +98,7 @@ export const deleteTaskComment = async (req, res, next) => {
       return sendError(
         res,
         STATUS.NOT_FOUND,
-        ERROR_MESSAGES.TASK_COMMENT_NOT_FOUND
+        ERROR_MESSAGES.TASK_COMMENT_NOT_FOUND,
       );
     }
 
@@ -115,7 +116,7 @@ export const deleteTaskComment = async (req, res, next) => {
       res,
       null,
       STATUS.OK,
-      SUCCESS_MESSAGES.TASK_COMMENT_DELETED
+      SUCCESS_MESSAGES.TASK_COMMENT_DELETED,
     );
   } catch (err) {
     next(err);

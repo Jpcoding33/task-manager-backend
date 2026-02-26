@@ -17,6 +17,7 @@ export const SUCCESS_MESSAGES = {
   PROJECT_CREATED: "Project created successfully",
   PROJECT_ARCHIVED: "Project archived successfully",
   MEMBERS_ADDED_TO_PROJECT: "Members added successfully",
+  MEMBER_REMOVED: "Member removed successfully",
 
   // task
   TASK_CREATED: "Task created successfully",
@@ -51,6 +52,7 @@ export const ERROR_MESSAGES = {
     "You do not have permission to perform this action",
   ALREADY_MEMBER: "Already a member",
   CANNOT_ADD_OWNER: "Cannot add member",
+  CANNOT_REMOVE_OWNER: "Cannot remove project owner",
 
   // task
   TASK_NOT_FOUND: "Task not found",

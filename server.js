@@ -7,6 +7,7 @@ import { createServer } from "http";
 // import { Server } from "socket.io";
 // import path from "path";
 import connectDb from "./config/db.js";
+import { init } from "./utils/socket.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import authRouter from "./routes/auth.routes.js";
 import userRouter from "./routes/user.routes.js";
@@ -17,19 +18,20 @@ import notificationRouter from "./routes/notification.routes.js";
 const app = express();
 const server = createServer(app);
 
-// const io = new Server(server, { cors: "*" });
+const io = init(server);
 
-// io.on("connection", (socket) => {
-//   console.log("New client conneted", socket.id);
-//   socket.on("joinUser", (userId) => {
-//     socket.join(userId);
-//   });
-//   socket.on("disconnect", () => {
-//     console.log("Client disconnected", socket.id);
-//   });
-// });
+io.on("connection", (socket) => {
+  console.log("New client connected", socket.id);
 
-// app.locals.io = io;
+  socket.on("join", (userId) => {
+    socket.join(userId);
+    console.log(`User ${userId} joined their room`);
+  });
+
+  socket.on("disconnect", () => {
+    console.log("Client disconnected", socket.id);
+  });
+});
 
 app.use(helmet());
 app.use(cors({ origin: "*" }));
@@ -39,6 +41,7 @@ app.use(morgan("dev"));
 app.use("/api/auth", authRouter);
 app.use("/api/users", userRouter);
 app.use("/api/projects", projectRouter);
+app.use("/api/tasks", taskRouter);
 app.use("/api/notifications", notificationRouter);
 
 app.use(errorHandler);

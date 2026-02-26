@@ -5,6 +5,9 @@ import {
   getMyProjects,
   archiveProject,
   addProjectMembers,
+  removeMember,
+  getDashboardStats,
+  getProjectStats,
 } from "../controllers/project.controller.js";
 import { protect } from "../middleware/auth.js";
 import {
@@ -23,16 +26,18 @@ projectRouter.post(
   protect,
   createProjectValidation,
   validate,
-  createProject
+  createProject,
 );
+projectRouter.get("/stats", protect, getDashboardStats);
 projectRouter.get("/", protect, getMyProjects);
+projectRouter.get("/:id/stats", protect, projectAccess, getProjectStats);
 projectRouter.get("/:id", protect, projectAccess, getProjectById);
 projectRouter.patch(
   "/:id/archive",
   protect,
   projectAccess,
   projectRole("owner"),
-  archiveProject
+  archiveProject,
 );
 projectRouter.post(
   "/:id/members",
@@ -41,7 +46,14 @@ projectRouter.post(
   projectRole("owner", "admin"),
   addProjectMembersValidation,
   validate,
-  addProjectMembers
+  addProjectMembers,
+);
+projectRouter.delete(
+  "/:id/members/:userId",
+  protect,
+  projectAccess,
+  projectRole("owner", "admin"),
+  removeMember,
 );
 projectRouter.use("/:projectId/tasks", protect, projectAccess, taskRouter);
 

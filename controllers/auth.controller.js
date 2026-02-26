@@ -20,7 +20,7 @@ export const register = async (req, res, next) => {
       return sendError(
         res,
         STATUS.BAD_REQUEST,
-        ERROR_MESSAGES.EMAIL_REGISTERED
+        ERROR_MESSAGES.EMAIL_REGISTERED,
       );
 
     user = await User.create({ name, email, password });
@@ -29,7 +29,7 @@ export const register = async (req, res, next) => {
       res,
       { token, id: user._id, name: user.name, role: user.role },
       STATUS.OK,
-      SUCCESS_MESSAGES.USER_REGISTERED
+      SUCCESS_MESSAGES.USER_REGISTERED,
     );
   } catch (err) {
     next(err);
@@ -46,7 +46,7 @@ export const login = async (req, res, next) => {
       return sendError(
         res,
         STATUS.BAD_REQUEST,
-        ERROR_MESSAGES.INVALID_CREDENTIALS
+        ERROR_MESSAGES.INVALID_CREDENTIALS,
       );
 
     const isMatch = await user.comparePassword(password);
@@ -54,7 +54,7 @@ export const login = async (req, res, next) => {
       return sendError(
         res,
         STATUS.BAD_REQUEST,
-        ERROR_MESSAGES.INVALID_CREDENTIALS
+        ERROR_MESSAGES.INVALID_CREDENTIALS,
       );
 
     const token = signToken(user._id);
@@ -62,13 +62,12 @@ export const login = async (req, res, next) => {
       res,
       {
         token,
-        id: user._id,
         name: user.name,
         role: user.role,
         email: user.email,
       },
       STATUS.OK,
-      SUCCESS_MESSAGES.LOGIN_SUCCESS
+      SUCCESS_MESSAGES.LOGIN_SUCCESS,
     );
   } catch (err) {
     next(err);
@@ -94,7 +93,7 @@ export const forgotPassword = async (req, res, next) => {
     await user.save({ validateBeforeSave: false });
 
     const resetURL = `${req.protocol}://${req.get(
-      "host"
+      "host",
     )}/api/auth/reset-password/${resetToken}`;
     console.log(`Password reset link: ${resetURL}`);
 
@@ -102,7 +101,7 @@ export const forgotPassword = async (req, res, next) => {
       res,
       null,
       STATUS.OK,
-      SUCCESS_MESSAGES.RESET_PASSWORD_EMAIL_SENT
+      SUCCESS_MESSAGES.RESET_PASSWORD_EMAIL_SENT,
     );
   } catch (err) {
     next(err);
@@ -125,7 +124,7 @@ export const resetPassword = async (req, res, next) => {
       return sendError(
         res,
         STATUS.BAD_REQUEST,
-        ERROR_MESSAGES.INVALID_RESET_PASSWORD_TOKEN
+        ERROR_MESSAGES.INVALID_RESET_PASSWORD_TOKEN,
       );
 
     user.password = password;
@@ -137,7 +136,7 @@ export const resetPassword = async (req, res, next) => {
       res,
       null,
       STATUS.OK,
-      SUCCESS_MESSAGES.RESET_PASSWORD_SUCCESS
+      SUCCESS_MESSAGES.RESET_PASSWORD_SUCCESS,
     );
   } catch (err) {
     next(err);
@@ -149,8 +148,8 @@ export const myDetails = async (req, res, next) => {
     const user = req.user;
     return sendSuccess(
       res,
-      { id: user._id, name: user.name, role: user.role, email: user.email },
-      STATUS.OK
+      { name: user.name, role: user.role, email: user.email },
+      STATUS.OK,
     );
   } catch (err) {
     next(err);
