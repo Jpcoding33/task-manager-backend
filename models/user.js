@@ -1,54 +1,84 @@
-import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
+import { DataTypes } from "sequelize";
+import { sequelize } from "../config/database.js";
 
-const UserSchema = new mongoose.Schema(
+const User = sequelize.define(
+  "User",
   {
+    id: {
+      type: DataTypes.INTEGER,
+      autoIncrement: true,
+      primaryKey: true,
+    },
     name: {
-      type: String,
-      required: true,
-      index: true,
+      type: DataTypes.STRING,
+      allowNull: false,
     },
     email: {
-      type: String,
-      required: true,
-      unique: true,
-      lowercase: true,
+      type: DataTypes.STRING,
+      allowNull: false,
+      validate: {
+        isEmail: true,
+      },
     },
     password: {
-      type: String,
-      required: true,
+      type: DataTypes.STRING,
+      allowNull: false,
     },
     avatar: {
-      type: String,
+      type: DataTypes.STRING,
     },
     role: {
-      type: String,
-      enum: ["admin", "manager", "member"],
-      default: "member",
+      type: DataTypes.STRING,
+      validate: {
+        isIn: [["admin", "manager", "member"]],
+      },
+      defaultValue: "member",
     },
     isDeleted: {
-      type: Boolean,
-      default: false,
-      index: true,
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
     },
-    resetPasswordToken: String,
-    resetPasswordExpires: Date,
+    resetPasswordToken: {
+      type: DataTypes.STRING,
+    },
+    resetPasswordExpires: {
+      type: DataTypes.DATE,
+    },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    indexes: [
+      { fields: ["name"] },
+      { fields: ["isDeleted"] },
+      {
+        unique: true,
+        fields: ["email"],
+      },
+    ],
+    hooks: {
+      async beforeCreate(user) {
+        if (user.password) {
+          const salt = await bcrypt.genSalt(10);
+          user.password = await bcrypt.hash(user.password, salt);
+        }
+      },
+      async beforeUpdate(user) {
+        if (user.changed("password")) {
+          const salt = await bcrypt.genSalt(10);
+          user.password = await bcrypt.hash(user.password, salt);
+        }
+      },
+    },
+  },
 );
 
-UserSchema.pre("save", async function () {
-  if (!this.isModified("password")) return;
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
-});
-
-UserSchema.methods.comparePassword = function (candidate) {
+User.prototype.comparePassword = function (candidate) {
   return bcrypt.compare(candidate, this.password);
 };
 
-UserSchema.methods.createResetPasswordToken = function () {
+User.prototype.createResetPasswordToken = function () {
   const resetToken = crypto.randomBytes(32).toString("hex");
   this.resetPasswordToken = crypto
     .createHash("sha256")
@@ -58,5 +88,4 @@ UserSchema.methods.createResetPasswordToken = function () {
   return resetToken;
 };
 
-const User = mongoose.model("User", UserSchema);
 export default User;

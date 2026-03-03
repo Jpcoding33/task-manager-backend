@@ -1,6 +1,7 @@
 import express from "express";
 import {
   assignTaskValidation,
+  getMyTaskValidation,
   updateTaskStatusValidation,
   upsertTaskValidation,
 } from "../validations/task.validation.js";
@@ -30,7 +31,7 @@ taskRouter.post(
   validate,
   createTask,
 );
-taskRouter.get("/my-tasks", protect, getMyTasks);
+taskRouter.get("/my-tasks", protect, getMyTaskValidation, validate, getMyTasks);
 taskRouter.get("/", getAllTaskByProject);
 taskRouter.get("/:taskId", taskAccess, getTaskById);
 taskRouter.put(

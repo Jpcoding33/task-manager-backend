@@ -6,7 +6,8 @@ export const SUCCESS_MESSAGES = {
   USER_REGISTERED: "User registered successfully",
   LOGIN_SUCCESS: "User logged-in successfully",
   LOGOUT_SUCCESS: "User logged-out successfully",
-  RESET_PASSWORD_EMAIL_SENT: "Reset password link sent successfully",
+  RESET_PASSWORD_EMAIL_SENT:
+    "If an account with that email exists, you will receive a reset link shortly.",
   RESET_PASSWORD_SUCCESS: "Reset password successfully",
 
   // user
@@ -56,6 +57,7 @@ export const ERROR_MESSAGES = {
 
   // task
   TASK_NOT_FOUND: "Task not found",
+  TASK_STATUS_CANNOT_BE_UPDATED: "Task status cannot be updated",
 
   // task comment
   TASK_COMMENT_NOT_FOUND: "Task comment not found",

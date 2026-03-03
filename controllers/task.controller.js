@@ -1,90 +1,84 @@
+import { sequelize } from "../config/database.js";
 import {
+  ERROR_MESSAGES,
   NOTIFICATION_MESSAGES,
   SUCCESS_MESSAGES,
 } from "../constants/messages.js";
 import { NOTIFICATION_TYPE } from "../constants/notification.js";
 import { STATUS } from "../constants/statusCodes.js";
 import { allowedFields, TASK_ACTIVITY } from "../constants/task.js";
-import Task from "../models/task.js";
+import { Task, User, Project, ProjectMember } from "../models/index.js";
 import { createNotification } from "../utils/notificationService.js";
-import { sendSuccess } from "../utils/responseHandler.js";
+import { sendError, sendSuccess } from "../utils/responseHandler.js";
 import { logTaskActivity } from "../utils/taskActivityLogger.js";
 
 export const createTask = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
   try {
     const { title, description, priority, assignedTo, dueDate } = req.body;
+    const { id: projectId } = req.project;
+    const { id: userId } = req.user;
 
-    const project = req.project;
-
-    const task = await Task.create({
-      project: project._id,
-      title,
-      description,
-      priority,
-      assignedTo,
-      dueDate,
-      createdBy: req.user._id,
-    });
+    const task = await Task.create(
+      {
+        projectId,
+        title,
+        description,
+        priority,
+        assignedTo,
+        dueDate,
+        createdBy: userId,
+      },
+      { transaction },
+    );
 
     await logTaskActivity({
-      task: task._id,
-      project: project._id,
-      user: req.user._id,
+      taskId: task.id,
+      projectId,
+      userId,
       type: TASK_ACTIVITY.TASK_CREATED,
+      transaction,
     });
 
-    const resData = {
-      id: task._id,
-      title: task.title,
-      description: task.description,
-      priority: task.priority,
-      status: task.status,
-      assignedTo: task.assignedTo,
-      dueDate: task.dueDate,
-      createdBy: task.createdBy,
-      createdAt: task.createdAt,
-    };
+    await transaction.commit();
 
-    return sendSuccess(res, resData, STATUS.OK, SUCCESS_MESSAGES.TASK_CREATED);
+    return sendSuccess(res, task, STATUS.OK, SUCCESS_MESSAGES.TASK_CREATED);
   } catch (err) {
+    await transaction.rollback();
     next(err);
   }
 };
 
 export const getAllTaskByProject = async (req, res, next) => {
   try {
-    const project = req.project;
+    const { id: projectId } = req.project;
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
+    const limit = Math.min(parseInt(req.query.limit) || 10, 100);
+    const offset = (page - 1) * limit;
 
-    const query = {
-      project: project._id,
-      isArchived: false,
-    };
-
-    const [tasks, total] = await Promise.all([
-      Task.find(query)
-        .select("title status priority assignedTo dueDate createdAt")
-        .populate("assignedTo", "name email")
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      Task.countDocuments(query),
-    ]);
+    const { rows: tasks, count: total } = await Task.findAndCountAll({
+      where: { projectId, isArchived: false },
+      attributes: ["id", "title", "status", "priority", "dueDate", "createdAt"],
+      include: [
+        {
+          model: User,
+          as: "assignee",
+          attributes: ["name", "email"],
+        },
+      ],
+      order: [["createdAt", "DESC"]],
+      offset,
+      limit,
+      distinct: true,
+    });
 
     const resData = tasks.map((task) => ({
-      id: task._id,
+      id: task.id,
       title: task.title,
       status: task.status,
       priority: task.priority,
-      assignedTo: task.assignedTo
-        ? {
-            id: task.assignedTo._id,
-            name: task.assignedTo.name,
-            email: task.assignedTo.email,
-          }
+      assignedTo: task.assignee
+        ? { name: task.assignee.name, email: task.assignee.email }
         : null,
       dueDate: task.dueDate,
       createdAt: task.createdAt,
@@ -107,47 +101,61 @@ export const getAllTaskByProject = async (req, res, next) => {
 export const getMyTasks = async (req, res, next) => {
   try {
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
-    const skip = (page - 1) * limit;
+    const limit = Math.min(parseInt(req.query.limit) || 10, 100);
+    const offset = (page - 1) * limit;
 
     const query = {
-      assignedTo: req.user._id,
+      assignedTo: req.user.id,
       isArchived: false,
-      status: { $ne: "done" }, // Optional: separate done tasks or include them? Let's include all for now or filter.
-      // Actually, user might want to see completed tasks too. Let's just filter archived.
     };
 
-    // If status filter is passed
     if (req.query.status) {
       query.status = req.query.status;
     }
 
-    const [tasks, total] = await Promise.all([
-      Task.find(query)
-        .select("title status priority assignedTo dueDate createdAt project")
-        .populate("project", "name") // Populate project details
-        .populate("assignedTo", "name email")
-        .sort({ dueDate: 1 }) // Sort by due date ascending usually better for "my tasks"
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      Task.countDocuments(query),
-    ]);
+    const { rows: tasks, count: total } = await Task.findAndCountAll({
+      where: query,
+      attributes: [
+        "id",
+        "title",
+        "status",
+        "priority",
+        "assignedTo",
+        "dueDate",
+        "createdAt",
+      ],
+      include: [
+        {
+          model: Project,
+          as: "project",
+          attributes: ["id", "name"],
+        },
+        {
+          model: User,
+          as: "assignee",
+          attributes: ["id", "name", "email"],
+        },
+      ],
+      order: [["dueDate", "ASC"]],
+      offset,
+      limit,
+      distinct: true,
+    });
 
     const resData = tasks.map((task) => ({
-      id: task._id,
+      id: task.id,
       title: task.title,
       status: task.status,
       priority: task.priority,
       project: {
-        id: task.project?._id,
+        id: task.project?.id,
         name: task.project?.name || "Unknown Project",
       },
-      assignedTo: task.assignedTo
+      assignedTo: task.assignee
         ? {
-            id: task.assignedTo._id,
-            name: task.assignedTo.name,
-            email: task.assignedTo.email,
+            id: task.assignee.id,
+            name: task.assignee.name,
+            email: task.assignee.email,
           }
         : null,
       dueDate: task.dueDate,
@@ -172,21 +180,21 @@ export const getTaskById = async (req, res, next) => {
   try {
     const task = req.task;
     const resData = {
-      id: task._id,
+      id: task.id,
       title: task.title,
       description: task.description,
       status: task.status,
       priority: task.priority,
-      assignedTo: task.assignedTo
+      assignedTo: task.assignee
         ? {
-            id: task.assignedTo._id,
-            name: task.assignedTo.name,
-            email: task.assignedTo.email,
+            id: task.assignee.id,
+            name: task.assignee.name,
+            email: task.assignee.email,
           }
         : null,
       createdBy: {
-        name: task.createdBy.name,
-        email: task.createdBy.email,
+        name: task.creator.name,
+        email: task.creator.email,
       },
       dueDate: task.dueDate,
       createdAt: task.createdAt,
@@ -199,149 +207,207 @@ export const getTaskById = async (req, res, next) => {
 };
 
 export const updateTask = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
   try {
     const task = req.task;
 
     allowedFields.forEach((field) => {
-      if (req.body[field] != undefined) {
+      if (req.body[field] !== undefined) {
         task[field] = req.body[field];
       }
     });
 
-    await task.save();
+    await task.save({ transaction });
 
-    await task.populate([
-      { path: "assignedTo", select: "name email" },
-      { path: "createdBy", select: "name email" },
-    ]);
-
-    await logTaskActivity({
-      task: task._id,
-      project: req.project._id,
-      user: req.user._id,
-      type: TASK_ACTIVITY.TASK_UPDATED,
+    const updatedTask = await Task.findByPk(task.id, {
+      include: [
+        {
+          model: User,
+          as: "assignee",
+          attributes: ["id", "name", "email"],
+        },
+        {
+          model: User,
+          as: "creator",
+          attributes: ["name", "email"],
+        },
+      ],
+      transaction,
     });
 
+    await logTaskActivity({
+      taskId: updatedTask.id,
+      projectId: req.project.id,
+      userId: req.user.id,
+      type: TASK_ACTIVITY.TASK_UPDATED,
+      transaction,
+    });
+
+    await transaction.commit();
+
     const resData = {
-      id: task._id,
-      title: task.title,
-      description: task.description,
-      priority: task.priority,
-      status: task.status,
-      assignedTo: task.assignedTo
+      id: updatedTask.id,
+      title: updatedTask.title,
+      description: updatedTask.description,
+      priority: updatedTask.priority,
+      status: updatedTask.status,
+      assignedTo: updatedTask.assignee
         ? {
-            id: task.assignedTo._id,
-            name: task.assignedTo.name,
-            email: task.assignedTo.email,
+            id: updatedTask.assignee?.id,
+            name: updatedTask.assignee?.name,
+            email: updatedTask.assignee?.email,
           }
         : null,
       createdBy: {
-        name: task.createdBy?.name,
-        email: task.createdBy?.email,
+        name: updatedTask.creator?.name,
+        email: updatedTask.creator?.email,
       },
-      dueDate: task.dueDate,
-      createdAt: task.createdAt,
+      dueDate: updatedTask.dueDate,
+      createdAt: updatedTask.createdAt,
     };
 
-    return (
-      sendSuccess(res, resData),
-      STATUS.OK,
-      SUCCESS_MESSAGES.TASK_UPDATED
-    );
+    return sendSuccess(res, resData, STATUS.OK, SUCCESS_MESSAGES.TASK_UPDATED);
   } catch (err) {
+    await transaction.rollback();
     next(err);
   }
 };
 
 export const updateTaskStatus = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
   try {
     const { status } = req.body;
     const task = req.task;
     const oldStatus = task.status;
-    // Restrict members to only update their own tasks
-    if (req.myRole === "member" && !task.assignedTo._id.equals(req.user._id)) {
+    const { id: userId } = req.user;
+
+    if (!task.assignee) {
+      return sendError(
+        res,
+        STATUS.BAD_REQUEST,
+        ERROR_MESSAGES.TASK_STATUS_CANNOT_BE_UPDATED,
+      );
+    }
+
+    if (req.myRole === "member" && task.assignedTo !== userId) {
+      await transaction.rollback();
       return sendError(res, STATUS.FORBIDDEN, ERROR_MESSAGES.FORBIDDEN);
     }
 
     task.status = status;
-    await task.save();
+    await task.save({ transaction });
 
     await logTaskActivity({
-      task: task._id,
-      project: req.project._id,
-      user: req.user._id,
+      taskId: task.id,
+      projectId: req.project.id,
+      userId: userId,
       type: TASK_ACTIVITY.TASK_STATUS_CHANGED,
       meta: {
         from: oldStatus,
         to: status,
       },
+      transaction,
     });
 
-    // await createNotification({
-    //   user: task.assignedTo,
-    //   project: req.project._id,
-    //   task: task._id,
-    //   message: NOTIFICATION_MESSAGES.TASK_STATUS_CHANGED(
-    //     task.title,
-    //     task.status,
-    //   ),
-    //   type: NOTIFICATION_TYPE.TASK_STATUS_CHANGED,
-    // });
+    await createNotification({
+      userId: task.assignee.id,
+      projectId: req.project.id,
+      taskId: task.id,
+      message: NOTIFICATION_MESSAGES.TASK_STATUS_CHANGED(
+        task.title,
+        task.status,
+      ),
+      type: NOTIFICATION_TYPE.TASK_STATUS_CHANGED,
+      transaction,
+    });
+
+    await transaction.commit();
 
     return sendSuccess(res);
   } catch (err) {
+    await transaction.rollback();
     next(err);
   }
 };
 
 export const assignTask = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
   try {
     const { assignedTo } = req.body;
     const task = req.task;
+    const { id: projectId } = req.project;
+
+    const user = await User.findByPk(assignedTo);
+    if (!user) {
+      await transaction.rollback();
+      return sendError(res, STATUS.BAD_REQUEST, ERROR_MESSAGES.USER_NOT_FOUND);
+    }
+
+    const isMember = await ProjectMember.findOne({
+      where: { projectId, userId: assignedTo },
+    });
+    if (!isMember) {
+      await transaction.rollback();
+      return sendError(
+        res,
+        STATUS.BAD_REQUEST,
+        ERROR_MESSAGES.NOT_PROJECT_MEMBER,
+      );
+    }
 
     task.assignedTo = assignedTo;
-    await task.save();
+    await task.save({ transaction });
 
     await logTaskActivity({
-      task: task._id,
-      project: req.project._id,
-      user: req.user._id,
+      taskId: task.id,
+      projectId: projectId,
+      userId: req.user.id,
       type: TASK_ACTIVITY.TASK_ASSIGNED,
       meta: {
         assignedTo,
       },
+      transaction,
     });
 
     await createNotification({
-      user: assignedTo,
-      project: req.project._id,
-      task: task._id,
+      userId: assignedTo,
+      projectId: projectId,
+      taskId: task.id,
       message: NOTIFICATION_MESSAGES.TASK_ASSIGNED(task.title),
       type: NOTIFICATION_TYPE.TASK_ASSIGNED,
+      transaction,
     });
+
+    await transaction.commit();
 
     return sendSuccess(res);
   } catch (err) {
+    await transaction.rollback();
     next(err);
   }
 };
 
 export const deleteTask = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
   try {
     const task = req.task;
 
     task.isArchived = true;
-    await task.save();
+    await task.save({ transaction });
 
     await logTaskActivity({
-      task: task._id,
-      project: req.project._id,
-      user: req.user._id,
+      taskId: task.id,
+      projectId: req.project.id,
+      userId: req.user.id,
       type: TASK_ACTIVITY.TASK_DELETED,
+      transaction,
     });
+
+    await transaction.commit();
 
     return sendSuccess(res, null, STATUS.OK, SUCCESS_MESSAGES.TASK_DELETED);
   } catch (err) {
+    await transaction.rollback();
     next(err);
   }
 };

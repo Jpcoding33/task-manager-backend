@@ -1,40 +1,47 @@
-import mongoose from "mongoose";
 import { NOTIFICATION_TYPE } from "../constants/notification.js";
+import { DataTypes } from "sequelize";
+import { sequelize } from "../config/database.js";
 
-const NotificationSchema = new mongoose.Schema(
+const Notification = sequelize.define(
+  "Notification",
   {
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-      index: true,
+    id: {
+      type: DataTypes.INTEGER,
+      autoIncrement: true,
+      primaryKey: true,
     },
-    project: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Project",
+    userId: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
     },
-    task: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Task",
+    projectId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+    taskId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
     },
     message: {
-      type: String,
-      required: true,
+      type: DataTypes.TEXT,
+      allowNull: false,
     },
     type: {
-      type: String,
-      enum: Object.values(NOTIFICATION_TYPE),
-      required: true,
+      type: DataTypes.STRING,
+      validate: {
+        isIn: [Object.values(NOTIFICATION_TYPE)],
+      },
+      allowNull: false,
     },
     isRead: {
-      type: Boolean,
-      default: false,
-      index: true,
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    indexes: [{ fields: ["userId"] }, { fields: ["isRead"] }],
+  },
 );
-
-const Notification = mongoose.model("Notification", NotificationSchema);
 
 export default Notification;

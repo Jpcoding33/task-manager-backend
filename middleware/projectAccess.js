@@ -1,24 +1,29 @@
 import { ERROR_MESSAGES } from "../constants/messages.js";
 import { STATUS } from "../constants/statusCodes.js";
-import Project from "../models/project.js";
+import { Project, User } from "../models/index.js";
 import { sendError } from "../utils/responseHandler.js";
 
 export const projectAccess = async (req, res, next) => {
   try {
     const projectId = req.params.id || req.params.projectId;
 
-    // if (!projectId || !/^[0-9a-fA-F]{24}$/.test(projectId)) {
-    //   return sendError(res, STATUS.NOT_FOUND, ERROR_MESSAGES.PROJECT_NOT_FOUND);
-    // }
-
-    const project = await Project.findOne({ _id: projectId, isArchived: false })
-      .populate("owner", "name email")
-      .populate("members.user", "name email");
+    const project = await Project.findOne({
+      where: { id: projectId, isArchived: false },
+      include: [
+        { model: User, as: "owner", attributes: ["id", "name", "email"] },
+        {
+          model: User,
+          as: "members",
+          attributes: ["id", "name", "email"],
+          through: { attributes: ["role"] },
+        },
+      ],
+    });
 
     if (!project)
       return sendError(res, STATUS.NOT_FOUND, ERROR_MESSAGES.PROJECT_NOT_FOUND);
 
-    const member = project.members.find((m) => m.user._id.equals(req.user._id));
+    const member = project.members.find((user) => user.id === req.user.id);
     if (!member)
       return sendError(
         res,
@@ -27,7 +32,7 @@ export const projectAccess = async (req, res, next) => {
       );
 
     req.project = project;
-    req.myRole = member.role;
+    req.myRole = member.ProjectMember.role;
 
     next();
   } catch (err) {

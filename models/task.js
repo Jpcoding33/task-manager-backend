@@ -1,57 +1,79 @@
-import mongoose from "mongoose";
+import { DataTypes } from "sequelize";
 import { TASK_PRIORITY, TASK_STATUS } from "../constants/task.js";
+import { sequelize } from "../config/database.js";
 
-const TaskSchema = new mongoose.Schema(
+const Task = sequelize.define(
+  "Task",
   {
-    project: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Project",
-      required: true,
-      index: true,
+    id: {
+      type: DataTypes.INTEGER,
+      autoIncrement: true,
+      primaryKey: true,
+    },
+    projectId: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
     },
     title: {
-      type: String,
-      required: true,
-      trim: true,
-      maxLength: 100,
+      type: DataTypes.STRING(100),
+      allowNull: false,
+      validate: {
+        len: [1, 100],
+      },
+      set(value) {
+        this.setDataValue("title", value.trim());
+      },
     },
     description: {
-      type: String,
-      required: true,
-      trim: true,
-      maxLength: 1000,
+      type: DataTypes.TEXT,
+      allowNull: false,
+      validate: {
+        len: [1, 1000],
+      },
+      set(value) {
+        this.setDataValue("description", value.trim());
+      },
     },
     status: {
-      type: String,
-      enum: Object.values(TASK_STATUS),
-      default: TASK_STATUS.TODO,
-      index: true,
+      type: DataTypes.STRING,
+      validate: {
+        isIn: [Object.values(TASK_STATUS)],
+      },
+      defaultValue: TASK_STATUS.TODO,
     },
     priority: {
-      type: String,
-      enum: Object.values(TASK_PRIORITY),
-      default: TASK_PRIORITY.MEDIUM,
+      type: DataTypes.STRING,
+      validate: {
+        isIn: [Object.values(TASK_PRIORITY)],
+      },
+      defaultValue: TASK_PRIORITY.MEDIUM,
     },
     assignedTo: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      index: true,
+      type: DataTypes.INTEGER,
+      allowNull: true,
     },
     createdBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
+      type: DataTypes.INTEGER,
+      allowNull: false,
     },
-    dueDate: Date,
+    dueDate: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
     isArchived: {
-      type: Boolean,
-      default: false,
-      index: true,
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    indexes: [
+      { fields: ["projectId"] },
+      { fields: ["status"] },
+      { fields: ["assignedTo"] },
+      { fields: ["isArchived"] },
+    ],
+  },
 );
-
-const Task = mongoose.model("Task", TaskSchema);
 
 export default Task;

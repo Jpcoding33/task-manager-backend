@@ -1,3 +1,4 @@
+import { Op } from "sequelize";
 import {
   ERROR_MESSAGES,
   NOTIFICATION_MESSAGES,
@@ -5,35 +6,37 @@ import {
 } from "../constants/messages.js";
 import { NOTIFICATION_TYPE } from "../constants/notification.js";
 import { STATUS } from "../constants/statusCodes.js";
-import Project from "../models/project.js";
-import User from "../models/user.js";
-import Task from "../models/task.js";
+import { Task, User, Project, ProjectMember } from "../models/index.js";
 import { createNotification } from "../utils/notificationService.js";
 import { sendSuccess, sendError } from "../utils/responseHandler.js";
+import { sequelize } from "../config/database.js";
 
 export const createProject = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
   try {
     const { name, description } = req.body;
-    const project = await Project.create({
-      name,
-      description,
-      owner: req.user._id,
-      members: [
-        {
-          user: req.user._id,
-          role: "owner",
-        },
-      ],
-    });
+    const { id: userId } = req.user;
+
+    const project = await Project.create(
+      { name, description, ownerId: userId },
+      { transaction },
+    );
+
+    await ProjectMember.create(
+      { projectId: project.id, userId, role: "owner" },
+      { transaction },
+    );
+
+    await transaction.commit();
 
     const resData = {
-      id: project._id,
+      id: project.id,
       name: project.name,
       description: project.description,
-      owner: project.owner,
-      members: project.members,
+      ownerId: project.ownerId,
       createdAt: project.createdAt,
     };
+
     return sendSuccess(
       res,
       resData,
@@ -41,44 +44,68 @@ export const createProject = async (req, res, next) => {
       SUCCESS_MESSAGES.PROJECT_CREATED,
     );
   } catch (err) {
+    await transaction.rollback();
     next(err);
   }
 };
 
-export const updateProject = (rq, res, next) => {};
+export const updateProject = async (req, res, next) => {
+  try {
+    const project = req.project;
+    const { name, description } = req.body;
+
+    project.name = name;
+    project.description = description;
+
+    await project.save();
+
+    return sendSuccess(
+      res,
+      {
+        id: project.id,
+        name: project.name,
+        description: project.description,
+        updatedAt: project.updatedAt,
+      },
+      STATUS.OK,
+      SUCCESS_MESSAGES.PROJECT_UPDATED,
+    );
+  } catch (err) {
+    next(err);
+  }
+};
 
 export const getMyProjects = async (req, res, next) => {
   try {
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
+    const limit = Math.min(parseInt(req.query.limit) || 10, 100);
+    const offset = (page - 1) * limit;
 
-    const query = {
-      "members.user": req.user._id,
-      isArchived: false,
-    };
+    const { count: total, rows } = await Project.findAndCountAll({
+      where: { isArchived: false },
+      include: [
+        {
+          model: User,
+          as: "members",
+          attributes: ["id"],
+          through: { attributes: ["role"] },
+        },
+      ],
+      order: [["createdAt", "DESC"]],
+      limit,
+      offset,
+      distinct: true,
+    });
 
-    const [projects, total] = await Promise.all([
-      Project.find(query)
-        .select("name description owner members createdAt")
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      Project.countDocuments(query),
-    ]);
-
-    const resBody = projects.map((project) => {
-      const member = project.members.find((m) =>
-        m.user.equals ? m.user.equals(req.user._id) : m.user === req.user._id,
-      );
+    const resBody = rows.map((project) => {
+      const member = project.members.find((m) => m.id === req.user.id);
 
       return {
-        id: project._id,
+        id: project.id,
         name: project.name,
         description: project.description,
-        myRole: member?.role || "member",
-        membersCount: project.members.length,
+        myRole: member?.ProjectMember.role || "member",
+        membersCount: project.members?.length || 0,
         createdAt: project.createdAt,
       };
     });
@@ -106,24 +133,20 @@ export const getProjectById = async (req, res, next) => {
     const project = req.project;
 
     const resData = {
-      id: project._id,
+      id: project.id,
       name: project.name,
       description: project.description,
       owner: {
-        id: project.owner._id,
+        id: project.owner.id,
         name: project.owner.name,
         email: project.owner.email,
       },
       members: project.members.map((m) => ({
-        user: {
-          id: m.user._id,
-          name: m.user.name,
-          email: m.user.email,
-        },
-        role: m.role,
+        user: { id: m.id, name: m.name, email: m.email },
+        role: m.ProjectMember.role,
       })),
       myRole: req.myRole,
-      currentUserId: req.user._id,
+      currentUserId: req.user.id,
       createdAt: project.createdAt,
     };
     return sendSuccess(res, resData, STATUS.OK);
@@ -136,6 +159,14 @@ export const archiveProject = async (req, res, next) => {
   try {
     const project = req.project;
 
+    if (project.isArchived) {
+      return sendError(
+        res,
+        STATUS.BAD_REQUEST,
+        ERROR_MESSAGES.PROJECT_ALREADY_ARCHIVED,
+      );
+    }
+
     project.isArchived = true;
     await project.save();
 
@@ -146,60 +177,73 @@ export const archiveProject = async (req, res, next) => {
 };
 
 export const addProjectMembers = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
   try {
     const membersToBeAdded = req.body.members;
     const project = req.project;
 
     const userIds = membersToBeAdded.map((m) => m.userId);
-    const users = await User.find({ _id: { $in: userIds } })
-      .select("_id name")
-      .lean();
-    const userMap = new Map(users.map((u) => [u._id.toString(), u]));
+    const users = await User.findAll({
+      where: { id: userIds },
+      attributes: ["id", "name"],
+    });
+    const userMap = new Map(users.map((u) => [u.id, u]));
 
     const added = [];
     const skipped = [];
-    const notifications = [];
+
+    const existingMembers = await ProjectMember.findAll({
+      where: { projectId: project.id, userId: userIds },
+      attributes: ["userId"],
+    });
+    const existingSet = new Set(existingMembers.map((m) => m.userId));
 
     for (const member of membersToBeAdded) {
       const { userId, role } = member;
-      const user = userMap.get(userId.toString());
+      const user = userMap.get(userId);
 
       if (!user) {
         skipped.push({ userId, reason: ERROR_MESSAGES.USER_NOT_FOUND });
         continue;
       }
 
-      if (
-        project.members.some((m) =>
-          m.user._id ? m.user._id.equals(userId) : m.user.equals(userId),
-        )
-      ) {
-        skipped.push({ userId, reason: ERROR_MESSAGES.ALREADY_MEMBER });
-        continue;
-      }
-
-      if (project.owner.equals(userId)) {
+      if (project.ownerId === userId) {
         skipped.push({ userId, reason: ERROR_MESSAGES.CANNOT_ADD_OWNER });
         continue;
       }
 
-      project.members.push({ user: userId, role });
+      if (existingSet.has(userId)) {
+        skipped.push({ userId, reason: ERROR_MESSAGES.ALREADY_MEMBER });
+        continue;
+      }
+
       added.push({ userId, role: role || "member" });
-
-      notifications.push({
-        user: userId,
-        project: project._id,
-        message: NOTIFICATION_MESSAGES.PROJECT_MEMBER_ADDED(project.name),
-        type: NOTIFICATION_TYPE.PROJECT_MEMBER_ADDED,
-      });
     }
 
-    await project.save();
+    if (added.length > 0) {
+      await ProjectMember.bulkCreate(
+        added.map(({ userId, role }) => ({
+          projectId: project.id,
+          userId,
+          role,
+        })),
+        { transaction },
+      );
 
-    // Batch create notifications
-    if (notifications.length > 0) {
-      await Promise.all(notifications.map((n) => createNotification(n)));
+      await Promise.all(
+        added.map(({ userId }) =>
+          createNotification({
+            userId,
+            projectId: project.id,
+            message: NOTIFICATION_MESSAGES.PROJECT_MEMBER_ADDED(project.name),
+            type: NOTIFICATION_TYPE.PROJECT_MEMBER_ADDED,
+            transaction,
+          }),
+        ),
+      );
     }
+
+    await transaction.commit();
 
     return sendSuccess(
       res,
@@ -208,17 +252,19 @@ export const addProjectMembers = async (req, res, next) => {
       SUCCESS_MESSAGES.MEMBERS_ADDED,
     );
   } catch (err) {
+    await transaction.rollback();
     next(err);
   }
 };
 
 export const removeMember = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
   try {
-    const { id, userId } = req.params;
+    const { userId } = req.params;
     const project = req.project;
 
-    // Check if the user to be removed is the owner
-    if (project.owner.equals(userId)) {
+    if (project.ownerId === parseInt(userId)) {
+      await transaction.rollback();
       return sendError(
         res,
         STATUS.FORBIDDEN,
@@ -226,12 +272,12 @@ export const removeMember = async (req, res, next) => {
       );
     }
 
-    // Check if user is actually a member
-    const isMember = project.members.some(
-      (m) => m.user._id.toString() === userId.toString(),
-    );
+    const member = await ProjectMember.findOne({
+      where: { projectId: project.id, userId },
+    });
 
-    if (!isMember) {
+    if (!member) {
+      await transaction.rollback();
       return sendError(
         res,
         STATUS.NOT_FOUND,
@@ -239,38 +285,42 @@ export const removeMember = async (req, res, next) => {
       );
     }
 
-    // Remove member from project
-    project.members = project.members.filter(
-      (m) => m.user._id.toString() !== userId.toString(),
+    await member.destroy({ transaction });
+
+    await Task.update(
+      { assignedTo: null },
+      { where: { projectId: project.id, assignedTo: userId }, transaction },
     );
 
-    await project.save();
-
-    // Unassign tasks assigned to this user in this project
-    await Task.updateMany(
-      { project: project._id, assignedTo: userId },
-      { $unset: { assignedTo: "" } },
-    );
+    await transaction.commit();
 
     return sendSuccess(res, null, STATUS.OK, SUCCESS_MESSAGES.MEMBER_REMOVED);
   } catch (err) {
+    await transaction.rollback();
     next(err);
   }
 };
 
 export const getDashboardStats = async (req, res, next) => {
   try {
-    const userId = req.user._id;
+    const userId = req.user.id;
 
-    // 1. Get all projects where the user is a member
-    const userProjects = await Project.find({
-      "members.user": userId,
-      isArchived: false,
-    })
-      .select("_id")
-      .lean();
+    const userProjects = await Project.findAll({
+      where: { isArchived: false },
+      include: [
+        {
+          model: User,
+          as: "members",
+          where: { id: userId },
+          attributes: [],
+          through: { attributes: [] },
+        },
+      ],
+      attributes: ["id"],
+      raw: true,
+    });
 
-    const projectIds = userProjects.map((p) => p._id);
+    const projectIds = userProjects.map((p) => p.id);
 
     if (projectIds.length === 0) {
       return sendSuccess(
@@ -284,52 +334,52 @@ export const getDashboardStats = async (req, res, next) => {
       );
     }
 
-    // 2. Aggregate stats for all tasks in these projects
     const [taskStats, myTaskStats] = await Promise.all([
-      Task.aggregate([
-        {
-          $match: {
-            project: { $in: projectIds },
-            isArchived: false,
-          },
+      Task.findAll({
+        where: { projectId: { [Op.in]: projectIds }, isArchived: false },
+        attributes: [
+          "status",
+          [sequelize.fn("COUNT", sequelize.col("id")), "count"],
+        ],
+        group: ["status"],
+        raw: true,
+      }),
+      Task.findAll({
+        where: {
+          assignedTo: userId,
+          isArchived: false,
+          projectId: { [Op.in]: projectIds },
         },
-        {
-          $group: {
-            _id: "$status",
-            count: { $sum: 1 },
-          },
-        },
-      ]),
-      Task.aggregate([
-        {
-          $match: {
-            assignedTo: userId,
-            isArchived: false,
-          },
-        },
-        {
-          $group: {
-            _id: "$status",
-            count: { $sum: 1 },
-          },
-        },
-      ]),
+        attributes: [
+          "status",
+          [sequelize.fn("COUNT", sequelize.col("id")), "count"],
+        ],
+        group: ["status"],
+        raw: true,
+      }),
     ]);
 
     const stats = {
       totalProjects: projectIds.length,
       projectTasks: {
-        total: taskStats.reduce((acc, curr) => acc + curr.count, 0),
-        todo: taskStats.find((s) => s._id === "TODO")?.count || 0,
-        inProgress: taskStats.find((s) => s._id === "IN_PROGRESS")?.count || 0,
-        done: taskStats.find((s) => s._id === "DONE")?.count || 0,
+        total: taskStats.reduce((acc, curr) => acc + parseInt(curr.count), 0),
+        todo: parseInt(taskStats.find((s) => s.status === "TODO")?.count || 0),
+        inProgress: parseInt(
+          taskStats.find((s) => s.status === "IN_PROGRESS")?.count || 0,
+        ),
+        done: parseInt(taskStats.find((s) => s.status === "DONE")?.count || 0),
       },
       myTasks: {
-        total: myTaskStats.reduce((acc, curr) => acc + curr.count, 0),
-        todo: myTaskStats.find((s) => s._id === "TODO")?.count || 0,
-        inProgress:
-          myTaskStats.find((s) => s._id === "IN_PROGRESS")?.count || 0,
-        done: myTaskStats.find((s) => s._id === "DONE")?.count || 0,
+        total: myTaskStats.reduce((acc, curr) => acc + parseInt(curr.count), 0),
+        todo: parseInt(
+          myTaskStats.find((s) => s.status === "TODO")?.count || 0,
+        ),
+        inProgress: parseInt(
+          myTaskStats.find((s) => s.status === "IN_PROGRESS")?.count || 0,
+        ),
+        done: parseInt(
+          myTaskStats.find((s) => s.status === "DONE")?.count || 0,
+        ),
       },
     };
 
@@ -341,32 +391,32 @@ export const getDashboardStats = async (req, res, next) => {
 
 export const getProjectStats = async (req, res, next) => {
   try {
-    const projectId = req.project._id;
+    const projectId = req.project.id;
 
     const [taskStats, memberCount] = await Promise.all([
-      Task.aggregate([
-        {
-          $match: {
-            project: projectId,
-            isArchived: false,
-          },
-        },
-        {
-          $group: {
-            _id: "$status",
-            count: { $sum: 1 },
-          },
-        },
-      ]),
-      Project.findById(projectId).then((p) => p.members.length),
+      Task.findAll({
+        where: { projectId, isArchived: false },
+        attributes: [
+          "status",
+          [sequelize.fn("COUNT", sequelize.col("id")), "count"],
+        ],
+        group: ["status"],
+        raw: true,
+      }),
+      ProjectMember.count({ where: { projectId } }),
     ]);
 
     const stats = {
-      totalTasks: taskStats.reduce((acc, curr) => acc + curr.count, 0),
+      totalTasks: taskStats.reduce(
+        (acc, curr) => acc + parseInt(curr.count),
+        0,
+      ),
       statusBreakdown: {
-        todo: taskStats.find((s) => s._id === "TODO")?.count || 0,
-        inProgress: taskStats.find((s) => s._id === "IN_PROGRESS")?.count || 0,
-        done: taskStats.find((s) => s._id === "DONE")?.count || 0,
+        todo: parseInt(taskStats.find((s) => s.status === "TODO")?.count || 0),
+        inProgress: parseInt(
+          taskStats.find((s) => s.status === "IN_PROGRESS")?.count || 0,
+        ),
+        done: parseInt(taskStats.find((s) => s.status === "DONE")?.count || 0),
       },
       memberCount,
     };

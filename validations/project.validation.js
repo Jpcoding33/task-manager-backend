@@ -1,5 +1,4 @@
 import { body } from "express-validator";
-import { isValidObjectId } from "mongoose";
 
 export const createProjectValidation = [
   body("name").trim().notEmpty().withMessage("Project name is required"),
@@ -18,7 +17,7 @@ export const addProjectMembersValidation = [
   body("members.*.userId")
     .notEmpty()
     .withMessage("One or more member userIds are missing")
-    .custom(isValidObjectId)
+    .isInt({ min: 1 })
     .withMessage("One or more member userIds are invalid"),
 
   body("members.*.role")

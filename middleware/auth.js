@@ -1,9 +1,9 @@
 import jsonwebtoken from "jsonwebtoken";
-import User from "../models/user.js";
 import { JWT_SECRET } from "../config/envConfig.js";
 import { sendError } from "../utils/responseHandler.js";
 import { STATUS } from "../constants/statusCodes.js";
 import { ERROR_MESSAGES } from "../constants/messages.js";
+import { User } from "../models/index.js";
 
 export const protect = async (req, res, next) => {
   let token;
@@ -19,7 +19,9 @@ export const protect = async (req, res, next) => {
 
   try {
     const decodedToken = jsonwebtoken.decode(token, JWT_SECRET);
-    const user = await User.findById(decodedToken.id).select("-password");
+    const user = await User.findByPk(decodedToken.id, {
+      attributes: { exclude: ["password"] },
+    });
     if (!user)
       return sendError(res, STATUS.UNAUTHORIZED, ERROR_MESSAGES.USER_NOT_FOUND);
 

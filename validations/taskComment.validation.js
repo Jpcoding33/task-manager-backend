@@ -1,5 +1,4 @@
 import { body } from "express-validator";
-import { isValidObjectId } from "mongoose";
 
 export const addTaskCommentValidation = [
   body("content")

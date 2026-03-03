@@ -6,7 +6,7 @@ import helmet from "helmet";
 import { createServer } from "http";
 // import { Server } from "socket.io";
 // import path from "path";
-import connectDb from "./config/db.js";
+import connectDb, { sequelize } from "./config/database.js";
 import { init } from "./utils/socket.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import authRouter from "./routes/auth.routes.js";
@@ -49,13 +49,17 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 5000;
 
 connectDb()
-  .then(() => {
-    console.log("MongoDB connected successfully");
+  .then(async () => {
+    console.log("✅ MSSQL Connected via Sequelize");
+
+    // This creates the table
+    await sequelize.sync({ force: false });
+
     server.listen(PORT, () => {
       console.log("Server running on port", PORT);
     });
   })
   .catch((err) => {
-    console.log("Failed to connect mongodb", err);
+    console.error("❌ Unable to connect:", err);
     process.exit(1);
   });

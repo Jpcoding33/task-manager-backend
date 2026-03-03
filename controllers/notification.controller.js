@@ -1,25 +1,25 @@
 import { ERROR_MESSAGES } from "../constants/messages.js";
 import { STATUS } from "../constants/statusCodes.js";
-import Notification from "../models/notification.js";
+import { Notification } from "../models/index.js";
 import { sendError, sendSuccess } from "../utils/responseHandler.js";
 
 export const getMyNotifications = async (req, res, next) => {
   try {
-    const notifications = await Notification.find({
-      user: req.user._id,
-    })
-      .sort({ createdAt: -1 })
-      .limit(50);
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
 
-    const resData = notifications.map((n) => ({
-      id: n._id,
-      message: n.message,
-      isRead: n.isRead,
-      type: n.type,
-      createdAt: n.createdAt,
-    }));
+    const notifications = await Notification.findAll({
+      where: {
+        userId: req.user.id,
+      },
+      attributes: ["id", "message", "isRead", "type", "createdAt"],
+      order: [["createdAt", "DESC"]],
+      offset,
+      limit,
+    });
 
-    return sendSuccess(res, resData);
+    return sendSuccess(res, notifications);
   } catch (err) {
     next(err);
   }
@@ -27,10 +27,12 @@ export const getMyNotifications = async (req, res, next) => {
 
 export const getUnreadNotificationCount = async (req, res, next) => {
   try {
-    const unreadNotificationCount = await Notification.find({
-      user: req.user._id,
-      isRead: false,
-    }).countDocuments();
+    const unreadNotificationCount = await Notification.count({
+      where: {
+        userId: req.user.id,
+        isRead: false,
+      },
+    });
 
     return sendSuccess(res, unreadNotificationCount);
   } catch (err) {
@@ -42,17 +44,18 @@ export const markAsRead = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    const notification = await Notification.findOne({ _id: id, isRead: false });
-    if (!notification) {
+    const [updatedRows] = await Notification.update(
+      { isRead: true },
+      { where: { id, userId: req.user.id, isRead: false } },
+    );
+
+    if (!updatedRows) {
       return sendError(
         res,
         STATUS.NOT_FOUND,
-        ERROR_MESSAGES.NOTIFICATION_NOT_FOUND
+        ERROR_MESSAGES.NOTIFICATION_NOT_FOUND,
       );
     }
-
-    notification.isRead = true;
-    await notification.save();
 
     return sendSuccess(res);
   } catch (err) {
@@ -62,9 +65,9 @@ export const markAsRead = async (req, res, next) => {
 
 export const markAllAsRead = async (req, res, next) => {
   try {
-    await Notification.updateMany(
-      { user: req.user._id, isRead: false },
-      { isRead: true }
+    await Notification.update(
+      { isRead: true },
+      { where: { userId: req.user.id, isRead: false } },
     );
 
     return sendSuccess(res);

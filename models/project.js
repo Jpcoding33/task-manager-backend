@@ -1,50 +1,39 @@
-import mongoose from "mongoose";
+import { sequelize } from "../config/database.js";
+import { DataTypes } from "sequelize";
 
-const ProjectMemberSchema = new mongoose.Schema(
+const Project = sequelize.define(
+  "Project",
   {
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-      index: true,
+    id: {
+      type: DataTypes.INTEGER,
+      autoIncrement: true,
+      primaryKey: true,
     },
-    role: {
-      type: String,
-      enum: ["owner", "admin", "member"],
-      default: "member",
-    },
-  },
-  { _id: false }
-);
-
-const ProjectSchema = new mongoose.Schema(
-  {
     name: {
-      type: String,
-      required: true,
+      type: DataTypes.STRING,
+      allowNull: false,
     },
     description: {
-      type: String,
-      required: true,
+      type: DataTypes.TEXT,
+      allowNull: false,
     },
-    owner: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-      index: true,
+    ownerId: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
     },
-    members: [ProjectMemberSchema],
     isArchived: {
-      type: Boolean,
-      default: false,
-      index: true,
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    indexes: [
+      { fields: ["ownerId"] },
+      { fields: ["isArchived"] },
+      { fields: ["name"] },
+    ],
+  },
 );
-
-ProjectSchema.index({ "members.user": 1, isArchived: 1 });
-
-const Project = mongoose.model("Project", ProjectSchema);
 
 export default Project;

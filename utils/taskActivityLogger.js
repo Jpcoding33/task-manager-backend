@@ -1,17 +1,21 @@
 import TaskActivity from "../models/taskActivity.js";
 
 export const logTaskActivity = async ({
-  task,
-  project,
-  user,
+  taskId,
+  projectId,
+  userId,
   type,
   meta = {},
+  transaction,
 }) => {
-  await TaskActivity.create({
-    task,
-    project,
-    user,
-    type,
-    meta,
-  });
+  await TaskActivity.create(
+    {
+      taskId,
+      projectId,
+      userId,
+      type,
+      meta,
+    },
+    { transaction },
+  );
 };

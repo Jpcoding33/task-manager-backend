@@ -1,38 +1,45 @@
-import mongoose from "mongoose";
+import { sequelize } from "../config/database.js";
+import { DataTypes } from "sequelize";
 
-const TaskCommentSchema = new mongoose.Schema(
+const TaskComment = sequelize.define(
+  "TaskComment",
   {
-    task: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Task",
-      required: true,
-      index: true,
+    id: {
+      type: DataTypes.INTEGER,
+      autoIncrement: true,
+      primaryKey: true,
     },
-    project: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Project",
-      required: true,
-      index: true,
+    taskId: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
     },
-    author: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
+    projectId: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+    },
+    authorId: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
     },
     content: {
-      type: String,
-      required: true,
-      trim: true,
-      maxlength: 200,
+      type: DataTypes.TEXT,
+      allowNull: false,
+      validate: {
+        len: [1, 200],
+      },
+      set(value) {
+        this.setDataValue("content", value.trim());
+      },
     },
     isDeleted: {
-      type: Boolean,
-      default: false,
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    indexes: [{ fields: ["taskId"] }, { fields: ["projectId"] }],
+  },
 );
-
-const TaskComment = mongoose.model("TaskComment", TaskCommentSchema);
 
 export default TaskComment;

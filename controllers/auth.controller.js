@@ -1,9 +1,10 @@
-import User from "../models/user.js";
+import { User } from "../models/index.js";
 import jsonwebtoken from "jsonwebtoken";
 import { sendError, sendSuccess } from "../utils/responseHandler.js";
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from "../constants/messages.js";
 import { STATUS } from "../constants/statusCodes.js";
 import crypto from "crypto";
+import { Op } from "sequelize";
 
 function signToken(id) {
   return jsonwebtoken.sign({ id }, process.env.JWT_SECRET, {
@@ -15,19 +16,27 @@ export const register = async (req, res, next) => {
   try {
     const { name, email, password } = req.body;
     const lowerEmail = email.toLowerCase();
-    let user = await User.findOne({ email: lowerEmail }).select("-password");
-    if (user)
+
+    let existingUser = await User.findOne({
+      where: { email: lowerEmail },
+    });
+    if (existingUser)
       return sendError(
         res,
         STATUS.BAD_REQUEST,
         ERROR_MESSAGES.EMAIL_REGISTERED,
       );
 
-    user = await User.create({ name, email, password });
-    const token = signToken(user._id);
+    const user = await User.create({ name, email: lowerEmail, password });
+    const token = signToken(user.id);
     return sendSuccess(
       res,
-      { token, id: user._id, name: user.name, role: user.role },
+      {
+        token,
+        name: user.name,
+        role: user.role,
+        email: user.email,
+      },
       STATUS.OK,
       SUCCESS_MESSAGES.USER_REGISTERED,
     );
@@ -41,7 +50,7 @@ export const login = async (req, res, next) => {
     const { email, password } = req.body;
     const lowerEmail = email.toLowerCase();
 
-    let user = await User.findOne({ email: lowerEmail });
+    let user = await User.findOne({ where: { email: lowerEmail } });
     if (!user)
       return sendError(
         res,
@@ -57,7 +66,7 @@ export const login = async (req, res, next) => {
         ERROR_MESSAGES.INVALID_CREDENTIALS,
       );
 
-    const token = signToken(user._id);
+    const token = signToken(user.id);
     return sendSuccess(
       res,
       {
@@ -85,9 +94,18 @@ export const logout = async (req, res, next) => {
 export const forgotPassword = async (req, res, next) => {
   try {
     const email = req.body.email.toLowerCase();
-    const user = await User.findOne({ email }).select("-password");
+    const user = await User.findOne({
+      where: { email },
+      attributes: { exclude: ["password"] },
+    });
+
     if (!user)
-      return sendError(res, STATUS.NOT_FOUND, ERROR_MESSAGES.USER_NOT_FOUND);
+      return sendSuccess(
+        res,
+        null,
+        STATUS.OK,
+        ERROR_MESSAGES.RESET_PASSWORD_EMAIL_SENT,
+      );
 
     const resetToken = await user.createResetPasswordToken();
     await user.save({ validateBeforeSave: false });
@@ -95,7 +113,6 @@ export const forgotPassword = async (req, res, next) => {
     const resetURL = `${req.protocol}://${req.get(
       "host",
     )}/api/auth/reset-password/${resetToken}`;
-    console.log(`Password reset link: ${resetURL}`);
 
     return sendSuccess(
       res,
@@ -116,8 +133,10 @@ export const resetPassword = async (req, res, next) => {
     const hashToken = crypto.createHash("sha256").update(token).digest("hex");
 
     const user = await User.findOne({
-      resetPasswordToken: hashToken,
-      resetPasswordExpires: { $gt: Date.now() },
+      where: {
+        resetPasswordToken: hashToken,
+        resetPasswordExpires: { [Op.gt]: new Date() },
+      },
     });
 
     if (!user)
@@ -128,8 +147,8 @@ export const resetPassword = async (req, res, next) => {
       );
 
     user.password = password;
-    user.resetPasswordToken = undefined;
-    user.resetPasswordExpires = undefined;
+    user.resetPasswordToken = null;
+    user.resetPasswordExpires = null;
     await user.save();
 
     return sendSuccess(
@@ -145,12 +164,8 @@ export const resetPassword = async (req, res, next) => {
 
 export const myDetails = async (req, res, next) => {
   try {
-    const user = req.user;
-    return sendSuccess(
-      res,
-      { name: user.name, role: user.role, email: user.email },
-      STATUS.OK,
-    );
+    const { name, role, email } = req.user;
+    return sendSuccess(res, { name, role, email }, STATUS.OK);
   } catch (err) {
     next(err);
   }

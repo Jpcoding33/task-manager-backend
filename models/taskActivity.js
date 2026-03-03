@@ -1,43 +1,46 @@
-import mongoose from "mongoose";
 import { TASK_ACTIVITY } from "../constants/task.js";
+import { sequelize } from "../config/database.js";
+import { DataTypes } from "sequelize";
 
-const TaskActivitySchema = new mongoose.Schema(
+const TaskActivity = sequelize.define(
+  "TaskActivity",
   {
-    task: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Task",
-      required: true,
-      index: true,
+    id: {
+      type: DataTypes.INTEGER,
+      autoIncrement: true,
+      primaryKey: true,
     },
-    project: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Project",
-      required: true,
-      index: true,
+    taskId: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
     },
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
+    projectId: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+    },
+    userId: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
     },
     type: {
-      type: String,
-      enum: Object.values(TASK_ACTIVITY),
-      required: true,
-    },
-    meta: {
-      from: String,
-      to: String,
-      comment: String,
-      assignedTo: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
+      type: DataTypes.STRING,
+      validate: {
+        isIn: [Object.values(TASK_ACTIVITY)],
       },
+      allowNull: false,
+    },
+    from: { type: DataTypes.STRING, allowNull: true },
+    to: { type: DataTypes.STRING, allowNull: true },
+    comment: { type: DataTypes.STRING, allowNull: true },
+    assignedTo: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    indexes: [{ fields: ["taskId"] }, { fields: ["projectId"] }],
+  },
 );
-
-const TaskActivity = mongoose.model("TaskActivity", TaskActivitySchema);
 
 export default TaskActivity;
